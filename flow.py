@@ -58,8 +58,8 @@ def create_flowchart(code):
         graph.edge(block_stack[-1], 'end')
     return graph
 
-with open('./test.py', 'r') as file:
+with open('./target.py', 'r') as file:
     code = file.read()
 
 flowchart = create_flowchart(code)
-flowchart.render('output', format='png', cleanup=True)
+flowchart.render('flowChart', format='svg', cleanup=True)

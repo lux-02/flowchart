@@ -36,8 +36,8 @@ def generate_flowchart(code):
     return cfg_visitor.graph
 
 
-with open('./test.py', 'r') as file:
+with open('./target.py', 'r') as file:
     code = file.read()
 
 flowchart = generate_flowchart(code)
-flowchart.render('output', format='svg', cleanup=True)
+flowchart.render('astFlow', format='svg', cleanup=True)
