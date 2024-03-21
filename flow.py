@@ -58,9 +58,6 @@ def create_flowchart(code):
         graph.edge(block_stack[-1], 'end')
     return graph
 
-
-
-
 with open('./test.py', 'r') as file:
     code = file.read()
 
