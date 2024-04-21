@@ -2,6 +2,8 @@ import os
 import subprocess
 import re
 import ast
+from graphviz import Source, render
+
 
 class UMLDiagramGenerator(ast.NodeVisitor):
     def __init__(self):
@@ -24,11 +26,10 @@ class UMLDiagramGenerator(ast.NodeVisitor):
                     if isinstance(target, ast.Name):
                         prop_name = target.id
                         prop_type = self.infer_type(item.value)
-                        # Check if it's a list comprehension and set multiplicity accordingly
                         if isinstance(item.value, ast.ListComp):
                             current_class_types[prop_name] = (prop_type, '0..*')
                         else:
-                            current_class_types[prop_name] = (prop_type, '1')  # Default multiplicity is '1'
+                            current_class_types[prop_name] = (prop_type, '1')  
                     elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
                         attr_name = target.value.id
                         attr_type = target.attr
@@ -94,11 +95,6 @@ def generate_class_diagram(code, filename='temp.py'):
         generator = UMLDiagramGenerator()
         generator.visit(tree)
 
-        # Add attributes and their multiplicities manually
-        generator.compositions.append(('Classroom', 'Teacher', 'teacher', '1'))
-        generator.compositions.append(('Classroom', 'Student', 'students', '0..*'))
-        generator.aggregations.append(('School', 'Classroom', 'classrooms', '0..*'))
-
         with open(dot_file, 'r') as file:
             dot_content = file.read()
         modified_dot_content = modify_dot_content(dot_content, generator)
@@ -143,40 +139,55 @@ def modify_dot_content(dot_content, generator):
     lines = lines[:insert_index] + new_relationships + lines[insert_index:]
     return '\n'.join(lines)
 
+
+
+
+########################################################
+########################################################
+
+
+def find_python_files(directory):
+    python_files = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".py"):
+                python_files.append(os.path.join(root, file))
+    return python_files
+
+
+def generate_class_diagrams_for_directory(directory):
+    python_files = find_python_files(directory)
+    for file in python_files:
+        with open(file, 'r') as f:
+            code = f.read()
+            generate_class_diagram(code, file)
+            combine_class_diagrams(directory)
+            
+def combine_class_diagrams(directory):
+    python_files = find_python_files(directory)
+    combined_dot_file = 'combined_classes.dot'
+
+    if os.path.exists('classes.dot'):
+        with open('classes.dot', 'r') as f:
+            dot_content = f.read()
+            print(dot_content)
+            with open(combined_dot_file, 'a') as combined_file:
+                combined_file.write(dot_content)
+                combined_file.write('\n\n')  
+
+def last():
+    combined_dot_file = 'combined_classes.dot'
+    output_image_file = 'xxxx.png'
+
+    try:
+        render('dot', 'png', combined_dot_file)
+        print(f"Combined class diagram image generated: {output_image_file}")
+    except Exception as e:
+        print(f"Failed to generate combined class diagram image: {e}")
+
+
+
 # Example usage
-code = """
-class Teacher:
-    def teach(self):
-        print("Teaching students")
-
-class Student:
-    def study(self):
-        print("Studying hard")
-
-class Classroom:
-    def __init__(self):
-        # Composition: Classroom class manages one Teacher object with multiplicity 1
-        self.teacher = Teacher()
-        # Composition: Classroom class manages multiple Student objects with multiplicity 0..*
-        self.students = [Student() for _ in range(30)]
-
-    def class_session(self):
-        self.teacher.teach()
-        for student in self.students:
-            student.study()
-
-class School:
-    def __init__(self):
-        # Aggregation: School class refers to multiple Classroom objects, but does not directly manage their lifecycle.
-        self.classrooms = [Classroom() for _ in range(10)]
-
-    def start_day(self):
-        for classroom in self.classrooms:
-            classroom.class_session()
-
-# Example usage
-school = School()
-school.start_day()
-"""
-
-generate_class_diagram(code)
+directory = "/Users/lux/Documents/UML/"
+generate_class_diagrams_for_directory(directory)
+last()
