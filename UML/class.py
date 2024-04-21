@@ -3,19 +3,34 @@ import subprocess
 import re
 import ast
 
-class TypeInferencer(ast.NodeVisitor):
+class UMLDiagramGenerator(ast.NodeVisitor):
     def __init__(self):
+        self.inheritances = []
+        self.compositions = []
+        self.aggregations = []
+        self.classes = {}
         self.types = {}
         self.methods = {}
 
     def visit_ClassDef(self, node):
+        class_name = node.name
+        bases = [base.id for base in node.bases if isinstance(base, ast.Name)]
+        self.inheritances.extend((class_name, base) for base in bases)
+
         for item in node.body:
-            if isinstance(item, ast.FunctionDef):
-                self.methods[item.name] = self.infer_method_return_type(item)
-            elif isinstance(item, ast.Assign):
+            if isinstance(item, ast.Assign):
                 for target in item.targets:
                     if isinstance(target, ast.Name):
                         self.types[target.id] = self.infer_type(item.value)
+                        if isinstance(item.value, ast.Call) and isinstance(item.value.func, ast.Name):
+                            # Check if the type is a class and add to compositions or aggregations
+                            called_class = item.value.func.id
+                            if called_class in self.classes:
+                                # If the object is instantiated inside the class, it's a composition
+                                self.compositions.append((class_name, called_class))
+            elif isinstance(item, ast.FunctionDef):
+                self.methods[item.name] = self.infer_method_return_type(item)
+        self.classes[class_name] = {'properties': list(self.types.keys()), 'methods': list(self.methods.keys())}
 
     def infer_type(self, node):
         if isinstance(node, ast.List):
@@ -30,7 +45,7 @@ class TypeInferencer(ast.NodeVisitor):
             elif isinstance(node.value, float):
                 return "float"
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            return node.func.id  # Assume it's a constructor call
+            return node.func.id
         return "Any"
 
     def infer_method_return_type(self, node):
@@ -40,81 +55,97 @@ class TypeInferencer(ast.NodeVisitor):
             return_type = "None"
         return return_type
 
-def parse_code_and_infer_types(code):
-    tree = ast.parse(code)
-    inferencer = TypeInferencer()
-    inferencer.visit(tree)
-    return inferencer.types, inferencer.methods
+def modify_dot_content(dot_content, generator):
+    # Process class definitions, type annotations, and inheritance
+    lines = dot_content.split('\n')
+    new_relationships = []
+    for subclass, baseclass in generator.inheritances:
+        new_relationships.append(f'  "temp.{baseclass}" -> "temp.{subclass}" [arrowhead="empty"];')
+    for owner, part in generator.compositions:
+        new_relationships.append(f'  "temp.{owner}" -> "temp.{part}" [arrowhead="diamond", style="solid"];')
+    for owner, part in generator.aggregations:
+        new_relationships.append(f'  "temp.{owner}" -> "temp.{part}" [arrowhead="diamond", style="dashed"];')
 
-def modify_dot_content(content, types, methods):
-    for var, typ in types.items():
-        content = re.sub(r'(\\l)?' + re.escape(var) + r'(\s*=\s*\S+)?(<br ALIGN="LEFT"/>)',
-                         rf'\1- {var} : {typ}\2\3', content)
-    for method, return_type in methods.items():
-        content = re.sub(r'(\\l)?' + re.escape(method) + r'\(\)(<br ALIGN="LEFT"/>)',
-                         rf'\1+ {method}() : {return_type}\2', content)
-    return content
+
+    for class_name, details in generator.classes.items():
+        for prop in details['properties']:
+            lines = [re.sub(r'(\\l)?' + re.escape(prop) + r'(\s*=\s*\S+)?(<br ALIGN="LEFT"/>)',
+                            rf'\1- {prop} : {generator.types[prop]}\2\3', line) for line in lines]
+        for method in details['methods']:
+            lines = [re.sub(r'(\\l)?' + re.escape(method) + r'\(\)(<br ALIGN="LEFT"/>)',
+                            rf'\1+ {method}() : {generator.methods[method]}\2', line) for line in lines]
+
+    insert_index = next((i for i, line in enumerate(lines) if '}' in line), len(lines))
+    lines = lines[:insert_index] + new_relationships + lines[insert_index:]
+    return '\n'.join(lines)
 
 def generate_class_diagram(code, filename='temp.py'):
     with open(filename, 'w') as f:
         f.write(code)
 
-    # Run pyreverse to generate .dot file instead of png
     try:
         subprocess.run(['pyreverse', '-AS', '-o', 'dot', filename], check=True)
     except subprocess.CalledProcessError as e:
-        print(f"pyreverse failed: {e.stderr}")
+        print(f"pyreverse failed: {e}")
         return
 
     dot_file = 'classes.dot'
     output_file = 'classes.png'
 
-    # Check if .dot file exists and proceed
     if os.path.exists(dot_file):
-        types, methods = parse_code_and_infer_types(code)
-        modify_dot_file(dot_file, types, methods)
-        # Generate PNG from the modified .dot file using dot command
-        subprocess.run(['dot', '-Tpng', dot_file, '-o', output_file], check=True)
-        if os.path.exists(output_file):
-            print(f"Class diagram has been generated: {output_file}")
-        else:
-            print("Failed to create class diagram PNG file.")
+        tree = ast.parse(code)
+        generator = UMLDiagramGenerator()
+        generator.visit(tree)
+
+        with open(dot_file, 'r') as file:
+            dot_content = file.read()
+        modified_dot_content = modify_dot_content(dot_content, generator)
+        with open(dot_file, 'w') as file:
+            file.write(modified_dot_content)
+        
+        try:
+            subprocess.run(['dot', '-Tpng', dot_file, '-o', output_file], check=True)
+            if os.path.exists(output_file):
+                print(f"Class diagram has been generated: {output_file}")
+            else:
+                print("Failed to create class diagram PNG file.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to generate PNG: {e}")
     else:
         print("Failed to create class diagram .dot file.")
 
-def modify_dot_file(dot_file, types, methods):
-    with open(dot_file, 'r') as file:
-        dot_content = file.read()
-
-    modified_dot_content = modify_dot_content(dot_content, types, methods)
-    with open(dot_file, 'w') as file:
-        file.write(modified_dot_content)
-
 # Example usage
 code = """
-class Course:
+class Engine:
+    def start(self):
+        print("Engine starting")
+
+class Wheel:
+    def rotate(self):
+        print("Wheel rotating")
+
+class Car:
     def __init__(self):
-        self.students = []  # List of Student instances
+        self.engine = Engine()  # 컴포지션: Car가 Engine의 생명주기를 관리
+        self.wheels = [Wheel() for _ in range(4)]  # 컴포지션: Car가 Wheel의 생명주기를 관리
 
-    def add_student(self, student):
-        assert isinstance(student, Student), "Only Student instances can be added."
-        self.students.append(student)
+    def drive(self):
+        self.engine.start()
+        for wheel in self.wheels:
+            wheel.rotate()
 
-class Person:
-    def __init__(self, name, age):
-        self.name = name
-        self.age = age
+class ElectricEngine(Engine):
+    def start(self):
+        print("Electric engine starting")
 
-    def greet(self):
-        print(f"Hello, my name is {self.name} and I am {self.age} years old.")
+class ElectricCar(Car):
+    def __init__(self):
+        super().__init__()
+        self.engine = ElectricEngine()  # 어그리게이션: ElectricCar는 ElectricEngine을 참조하지만 생명주기를 관리하지 않음
 
-class Student(Person):
-    def __init__(self, name, age, student_id):
-        super().__init__(name, age)
-        self.student_id = student_id
+    def charge(self):
+        print("Charging electric car")
 
-    def study(self):
-        return "studying"
 """
 
 generate_class_diagram(code)
