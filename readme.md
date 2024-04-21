@@ -6,9 +6,9 @@
 
 ### Stable-Diffusion-WebUI 중 일부 파일에 대해 생성된 다이어그램
 
-![이미지 1](./Img/1.png)
-![이미지 2](./Img/2.png)
-![이미지 3](./Img/3.png)
-![이미지 4](./Img/4.png)
-![이미지 5](./Img/5.png)
-![이미지 6](./Img/6.png)
+![이미지 1](./img/1.png)
+![이미지 2](./img/2.png)
+![이미지 3](./img/3.png)
+![이미지 4](./img/4.png)
+![이미지 5](./img/5.png)
+![이미지 6](./img/6.png)
